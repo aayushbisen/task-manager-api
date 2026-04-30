@@ -75,11 +75,36 @@ npm run start
 
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| `GET` | `/tasks` | Bearer | List tasks (user's own, all for admin) |
+| `GET` | `/tasks` | Bearer | List tasks (paginated, filterable, sortable) |
 | `POST` | `/tasks` | Bearer | Create a task |
 | `GET` | `/tasks/:id` | Bearer | Get task by ID |
 | `PATCH` | `/tasks/:id` | Bearer | Update a task |
 | `DELETE` | `/tasks/:id` | Bearer | Delete a task |
+
+#### GET /tasks Query Parameters
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `page` | number | `1` | Page number (min 1) |
+| `limit` | number | `20` | Items per page (max 100) |
+| `done` | boolean | — | Filter by completion status |
+| `priority` | string | — | Filter by priority (`low`, `medium`, `high`) |
+| `search` | string | — | Search in title and description |
+| `orderBy` | string | `createdAt` | Sort field (`createdAt`, `title`, `priority`, `dueDate`) |
+| `order` | string | `desc` | Sort direction (`asc`, `desc`) |
+
+**Response format:**
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 42,
+    "totalPages": 3
+  }
+}
+```
 
 ### Admin
 
