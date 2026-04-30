@@ -1,9 +1,9 @@
-import { FastifyPluginAsync, FastifyReply } from "fastify";
+import { FastifyPluginAsync } from "fastify";
 import type { FastifyInstance } from "fastify";
 import { ZodTypeProvider } from "@fastify/type-provider-zod";
 import type { AuthService } from "./service";
 import { registerSchema, loginSchema, updateProfileSchema } from "./schema.zod";
-import { AppError } from "../errors";
+import { handleError, authenticate } from "./utils";
 import { errorSchema, tokensSchema, userSchema } from "../common/schemas";
 import { z } from "zod";
 
@@ -14,32 +14,6 @@ const refreshTokenSchema = z.object({
 });
 
 type RefreshBody = z.infer<typeof refreshTokenSchema>;
-
-function handleError(error: unknown, reply: FastifyReply) {
-  if (error instanceof AppError) {
-    return reply.status(error.statusCode).send({ error: error.message });
-  }
-  throw error;
-}
-
-async function authenticate(request: any, reply: FastifyReply, authService: AuthService) {
-  const authHeader = request.headers.authorization;
-  if (!authHeader) {
-    return reply.status(401).send({ error: "Missing authorization header" });
-  }
-
-  const [scheme, token] = authHeader.split(" ");
-  if (scheme !== "Bearer" || !token) {
-    return reply.status(401).send({ error: "Invalid authorization header format" });
-  }
-
-  try {
-    const payload = authService.verifyAccessToken(token);
-    request.user = payload;
-  } catch {
-    return reply.status(401).send({ error: "Invalid or expired token" });
-  }
-}
 
 const usersListSchema = {
   type: "array" as const,

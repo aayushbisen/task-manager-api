@@ -58,12 +58,11 @@ export class DrizzleTaskRepository implements ITaskRepository {
     return task;
   }
 
-  async findByIdAndOwner(id: string, ownerId: string): Promise<Task | undefined> {
+async findByIdAndOwner(id: string, ownerId: string): Promise<Task | undefined> {
     const [task] = await db
       .select()
       .from(tasks)
-      .where(eq(tasks.id, id));
-    if (task && task.ownerId !== ownerId) return undefined;
+      .where(and(eq(tasks.id, id), eq(tasks.ownerId, ownerId)));
     return task;
   }
 
@@ -94,37 +93,6 @@ export class DrizzleTaskRepository implements ITaskRepository {
     return typeof total === "number" ? total : 0;
   }
 
-  private buildWhereClause(filters: TaskFilters, ownerId?: string): SQL | undefined {
-    const conditions: SQL[] = [];
-
-    if (ownerId) {
-      conditions.push(eq(tasks.ownerId, ownerId));
-    }
-    if (filters.done !== undefined) {
-      conditions.push(eq(tasks.done, filters.done));
-    }
-    if (filters.priority) {
-      conditions.push(eq(tasks.priority, filters.priority));
-    }
-    if (filters.search) {
-      const searchPattern = `%${filters.search}%`;
-      conditions.push(or(like(tasks.title, searchPattern), like(tasks.description, searchPattern))!);
-    }
-
-    return conditions.length > 0 ? and(...conditions) : undefined;
-  }
-
-  private buildOrderBy(orderBy: string, orderDir: "asc" | "desc") {
-    const colMap: Record<string, any> = {
-      createdAt: tasks.createdAt,
-      title: tasks.title,
-      priority: tasks.priority,
-      dueDate: tasks.dueDate,
-    };
-    const col = colMap[orderBy] ?? tasks.createdAt;
-    return orderDir === "asc" ? asc(col) : desc(col);
-  }
-
   async findPaginated(
     ownerId: string | undefined,
     filters: TaskFilters,
@@ -133,7 +101,26 @@ export class DrizzleTaskRepository implements ITaskRepository {
     page: number,
     limit: number,
   ): Promise<PaginatedResult<Task>> {
-    const whereClause = this.buildWhereClause(filters, ownerId);
+    const conditions: SQL[] = [];
+
+    if (ownerId) conditions.push(eq(tasks.ownerId, ownerId));
+    if (filters.done !== undefined) conditions.push(eq(tasks.done, filters.done));
+    if (filters.priority) conditions.push(eq(tasks.priority, filters.priority));
+    if (filters.search) {
+      const searchPattern = `%${filters.search}%`;
+      conditions.push(or(like(tasks.title, searchPattern), like(tasks.description, searchPattern))!);
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const colMap: Record<string, any> = {
+      createdAt: tasks.createdAt,
+      title: tasks.title,
+      priority: tasks.priority,
+      dueDate: tasks.dueDate,
+    };
+    const sortCol = colMap[orderBy] ?? tasks.createdAt;
+    const orderClause = orderDir === "asc" ? asc(sortCol) : desc(sortCol);
 
     const [{ count: total }] = await db.select({ count: count() }).from(tasks).where(whereClause);
 
@@ -141,7 +128,7 @@ export class DrizzleTaskRepository implements ITaskRepository {
       .select()
       .from(tasks)
       .where(whereClause)
-      .orderBy(this.buildOrderBy(orderBy, orderDir))
+      .orderBy(orderClause)
       .limit(limit)
       .offset((page - 1) * limit);
 

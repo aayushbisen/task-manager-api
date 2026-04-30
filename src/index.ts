@@ -4,7 +4,7 @@ import ScalarApiReference from "@scalar/fastify-api-reference";
 import fastifyCors from "@fastify/cors";
 import fastifyRateLimit from "@fastify/rate-limit";
 import { randomUUID } from "crypto";
-import "./auth/middleware";
+import "./auth/utils";
 import { healthRoutes } from "./health/routes";
 import { createAuthRoutes } from "./auth/routes";
 import { DrizzleAuthRepository } from "./auth/repository";

@@ -1,41 +1,15 @@
-import { FastifyPluginAsync, FastifyReply } from "fastify";
+import { FastifyPluginAsync } from "fastify";
 import type { FastifyInstance } from "fastify";
 import { ZodTypeProvider } from "@fastify/type-provider-zod";
 import type { TaskService } from "./service";
 import type { AuthService } from "../auth/service";
 import { createTaskSchema, updateTaskSchema, taskParamsSchema, listTasksQuerySchema, parseListTasksQuery } from "./schema.zod";
-import { AppError } from "../errors";
+import { handleError, authenticate } from "../auth/utils";
 import { errorSchema, taskSchema, paginationSchema } from "../common/schemas";
 import type { z } from "zod";
 
 type CreateTaskBody = z.infer<typeof createTaskSchema>;
 type UpdateTaskBody = z.infer<typeof updateTaskSchema>;
-
-function handleError(error: unknown, reply: FastifyReply) {
-  if (error instanceof AppError) {
-    return reply.status(error.statusCode).send({ error: error.message });
-  }
-  throw error;
-}
-
-async function authenticate(request: any, reply: FastifyReply, authService: AuthService) {
-  const authHeader = request.headers.authorization;
-  if (!authHeader) {
-    return reply.status(401).send({ error: "Missing authorization header" });
-  }
-
-  const [scheme, token] = authHeader.split(" ");
-  if (scheme !== "Bearer" || !token) {
-    return reply.status(401).send({ error: "Invalid authorization header format" });
-  }
-
-  try {
-    const payload = authService.verifyAccessToken(token);
-    request.user = payload;
-  } catch {
-    return reply.status(401).send({ error: "Invalid or expired token" });
-  }
-}
 
 const tasksListSchema = {
   type: "array" as const,
