@@ -12,6 +12,11 @@ A full-featured task management REST API built with Fastify, TypeScript, and SQL
 - **Input Validation** — Zod schemas shared between runtime and TypeScript types
 - **SQLite Database** — Drizzle ORM with migrations
 - **API Documentation** — Auto-generated OpenAPI 3.0.3 spec with Scalar UI at `/docs`
+- **Rate Limiting** — Two-tier: 10 req/min on auth routes, 100 req/min default
+- **Structured Logging** — Pino (JSON in production, pretty-printed in development)
+- **Global Error Handler** — Consistent error responses with request IDs
+- **CORS** — Configurable allowed origins via environment variable
+- **Graceful Shutdown** — Clean drain on `SIGTERM` / `SIGINT`
 
 ## Tech Stack
 
@@ -57,6 +62,9 @@ npm run start
 | `PORT` | `3000` | Server port |
 | `DB_PATH` | `tasks.db` | SQLite database file path |
 | `JWT_SECRET` | `dev-secret-change-in-production` | JWT signing key |
+| `ALLOWED_ORIGINS` | `*` | Comma-separated CORS allowed origins |
+| `NODE_ENV` | `development` | Environment (`development` or `production`) |
+| `RATE_LIMIT_DISABLED` | `false` | Disable rate limiting (dev only) |
 
 ## API Endpoints
 
@@ -129,6 +137,94 @@ Interactive API documentation is available when the server is running:
 - **OpenAPI Spec** — http://localhost:3000/openapi.json
 
 Endpoints are grouped by tag: Auth, Tasks, Admin, Health. Bearer token authentication can be tested directly in the UI.
+
+## Error Responses
+
+All errors return a consistent JSON format:
+
+```json
+{
+  "error": "TaskNotFound",
+  "message": "Task not found",
+  "requestId": "abc123",
+  "timestamp": "2026-04-30T12:00:00.000Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `error` | string | Machine-readable error code |
+| `message` | string | Human-readable description |
+| `requestId` | string | Unique ID for tracing (from `x-request-id` header) |
+| `timestamp` | string | ISO 8601 timestamp |
+| `stack` | string | Stack trace (development only) |
+
+### HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `400` | Validation error or bad request |
+| `401` | Missing or invalid authentication |
+| `403` | Insufficient permissions |
+| `404` | Resource not found |
+| `409` | Conflict (e.g., duplicate email, email in use) |
+| `429` | Rate limit exceeded |
+| `500` | Internal server error |
+
+## Rate Limiting
+
+Two tiers of rate limiting are applied:
+
+| Tier | Limit | Window | Applies To |
+|------|-------|--------|------------|
+| Default | 100 requests | 60 seconds | All routes |
+| Auth | 10 requests | 60 seconds | `/auth/*` routes |
+
+When rate limited, responses include `Retry-After` header and a `429` status:
+
+```json
+{
+  "error": "TooManyRequests",
+  "message": "Rate limit exceeded, retry in 60 seconds",
+  "requestId": "abc123",
+  "timestamp": "2026-04-30T12:00:00.000Z"
+}
+```
+
+Rate limiting is automatically disabled during tests (when `VITEST` env var is set).
+
+## Logging
+
+Structured logging via Pino:
+
+- **Development** (`NODE_ENV=development`): Pretty-printed, human-readable output at `debug` level
+- **Production** (`NODE_ENV=production`): JSON output at `info` level
+
+Sensitive fields (`password`, `token`, `authorization`, `passwordHash`) are automatically redacted. Each request is logged with a unique `requestId` (from `x-request-id` header or auto-generated).
+
+## CORS
+
+CORS is configured via the `ALLOWED_ORIGINS` environment variable:
+
+```bash
+# Single origin
+ALLOWED_ORIGINS=https://example.com
+
+# Multiple origins (comma-separated)
+ALLOWED_ORIGINS=https://example.com,https://admin.example.com
+```
+
+Defaults to `*` (all origins) when not set. The `x-request-id` header is always exposed to clients.
+
+## Graceful Shutdown
+
+The server handles `SIGTERM` and `SIGINT` signals to gracefully shut down:
+1. Stops accepting new connections
+2. Waits for in-flight requests to complete
+3. Closes database connections
+4. Exits the process
+
+This ensures zero-downtime deployments and clean process termination in containerized environments.
 
 ## Database
 

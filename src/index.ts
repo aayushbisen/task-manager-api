@@ -1,6 +1,9 @@
 import fastify, { FastifyInstance, FastifySchema } from "fastify";
 import fastifySwagger from "@fastify/swagger";
 import ScalarApiReference from "@scalar/fastify-api-reference";
+import fastifyCors from "@fastify/cors";
+import fastifyRateLimit from "@fastify/rate-limit";
+import { randomUUID } from "crypto";
 import "./auth/middleware";
 import { healthRoutes } from "./health/routes";
 import { createAuthRoutes } from "./auth/routes";
@@ -10,8 +13,56 @@ import { createTaskRoutes } from "./tasks/routes";
 import { DrizzleTaskRepository } from "./tasks/repository";
 import { TaskService } from "./tasks/service";
 
+const isDev = process.env.NODE_ENV !== "production";
+
 export function createServer(): FastifyInstance {
-  const server = fastify({ logger: false });
+  const server = fastify({
+    logger: {
+      level: isDev ? "debug" : "info",
+      transport: isDev
+        ? { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } }
+        : undefined,
+      redact: {
+        paths: ["req.headers.authorization", "req.body.password", "req.body.refreshToken", "req.body.accessToken"],
+        censor: "**redacted**",
+      },
+    },
+  });
+
+  server.addHook("onRequest", async (request) => {
+    request.id = request.headers["x-request-id"]?.toString() ?? randomUUID();
+    request.log.info({
+      method: request.method,
+      url: request.url,
+      remoteAddress: request.ip,
+    }, "incoming request");
+  });
+
+  server.setErrorHandler((error, request, reply) => {
+    const isProd = process.env.NODE_ENV === "production";
+    const statusCode = (error as any).statusCode ?? 500;
+    const message = isProd && statusCode >= 500 ? "An unexpected error occurred" : String((error as any).message || "Internal Server Error");
+    const errorLabel = statusCode >= 400 && statusCode < 500 ? String((error as any).message) : "Internal Server Error";
+
+    const baseResponse: Record<string, unknown> = {
+      error: errorLabel,
+      message,
+      requestId: request.id,
+      timestamp: new Date().toISOString(),
+    };
+
+    if (isDev && error instanceof Error && error.stack) {
+      baseResponse.stack = error.stack;
+    }
+
+    if (statusCode >= 500) {
+      request.log.error({ err: error, requestId: request.id }, "unhandled error");
+    } else {
+      request.log.warn({ err: error, statusCode, requestId: request.id }, "client error");
+    }
+
+    return reply.status(statusCode).send(baseResponse);
+  });
 
   // Set up zod schema validator compiler
   server.setValidatorCompiler(({ schema }) => {
@@ -28,6 +79,41 @@ export function createServer(): FastifyInstance {
     }
     return (data: unknown) => ({ value: data });
   });
+
+  // CORS configuration
+  const allowedOrigins = process.env.ALLOWED_ORIGINS;
+  server.register(fastifyCors, {
+    origin: allowedOrigins
+      ? allowedOrigins.split(",").map((o) => o.trim())
+      : true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
+    exposedHeaders: ["x-request-id"],
+    credentials: true,
+    maxAge: 86400,
+  });
+
+  // Rate limiting — two tiers (disabled in test environment)
+  if (!process.env.VITEST) {
+    server.register(fastifyRateLimit, {
+      max: 100,
+      timeWindow: "1 minute",
+      keyGenerator: (request) => request.ip,
+      errorResponseBuilder: (request, context) => ({
+        error: "Too Many Requests",
+        message: `Rate limit exceeded. Try again in ${Math.ceil(Number(String(context.after).replace("s", "")) * 1000)}s.`,
+        requestId: request.id,
+        timestamp: new Date().toISOString(),
+      }),
+    });
+
+    // Apply stricter rate limit to auth routes
+    server.addHook("onRoute", (routeOptions) => {
+      if (routeOptions.url?.startsWith("/auth")) {
+        routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
+      }
+    });
+  }
 
   // Register Swagger to generate OpenAPI spec
   server.register(fastifySwagger, {
@@ -120,9 +206,9 @@ if (require.main === module) {
   const start = async () => {
     try {
       await server.listen({ port: PORT, host: "0.0.0.0" });
-      console.log(`Server listening on http://0.0.0.0:${PORT}`);
-      console.log(`API docs: http://0.0.0.0:${PORT}/docs`);
-      console.log(`OpenAPI spec: http://0.0.0.0:${PORT}/openapi.json`);
+      server.log.info(`Server listening on http://0.0.0.0:${PORT}`);
+      server.log.info(`API docs: http://0.0.0.0:${PORT}/docs`);
+      server.log.info(`OpenAPI spec: http://0.0.0.0:${PORT}/openapi.json`);
     } catch (err) {
       server.log.error(err);
       process.exit(1);
@@ -130,4 +216,14 @@ if (require.main === module) {
   };
 
   start();
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    server.log.info("Shutting down gracefully...");
+    await server.close();
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
