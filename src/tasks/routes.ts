@@ -1,15 +1,15 @@
-import { FastifyPluginAsync } from "fastify";
+import { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import type { FastifyInstance } from "fastify";
 import { ZodTypeProvider } from "@fastify/type-provider-zod";
 import type { TaskService } from "./service";
-import type { AuthService } from "../auth/service";
 import { createTaskSchema, updateTaskSchema, taskParamsSchema, listTasksQuerySchema, parseListTasksQuery } from "./schema.zod";
-import { handleError, authenticate } from "../auth/utils";
+import { handleError } from "../common/error-handler";
 import { errorSchema, taskSchema, paginationSchema } from "../common/schemas";
 import type { z } from "zod";
 
 type CreateTaskBody = z.infer<typeof createTaskSchema>;
 type UpdateTaskBody = z.infer<typeof updateTaskSchema>;
+type AuthenticateFn = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
 const tasksListSchema = {
   type: "array" as const,
@@ -86,12 +86,12 @@ const openApiSchemas = {
   },
 };
 
-export function createTaskRoutes(taskService: TaskService, authService: AuthService): FastifyPluginAsync {
+export function createTaskRoutes(taskService: TaskService, authenticate: AuthenticateFn): FastifyPluginAsync {
   return async (fastify: FastifyInstance) => {
     const app = fastify.withTypeProvider<ZodTypeProvider>();
 
     app.addHook("preHandler", async (request, reply) => {
-      await authenticate(request, reply, authService);
+      await authenticate(request, reply);
     });
 
     app.get<{ Querystring: z.infer<typeof listTasksQuerySchema> }>(

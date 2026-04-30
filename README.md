@@ -259,25 +259,35 @@ npx tsc --noEmit
 
 ```
 src/
-  errors/          # Custom error classes
-  common/          # Shared JSON schemas for OpenAPI responses
-  types/           # TypeScript type augmentations (Fastify modules)
-  auth/            # Authentication feature
-    repository.ts  # IAuthRepository + Drizzle impl
-    service.ts     # AuthService (business logic)
-    routes.ts      # /auth/* + /users/* endpoints
-    schema.zod.ts  # Zod validation schemas
-    utils.ts     # Shared auth utilities (authenticate, handleError, types)
-  tasks/           # Tasks feature
-    repository.ts  # ITaskRepository + Drizzle impl
-    service.ts     # TaskService (scoped by owner)
-    routes.ts      # /tasks/* endpoints
-    schema.zod.ts  # Zod validation schemas
-  health/          # Health check routes
-  db/              # Data layer
-    schema.ts      # Table definitions (users, tasks, refreshTokens)
-    connection.ts  # SQLite + Drizzle instance
-  index.ts         # createServer() — dependency injection
+  index.ts            — Thin composer: wire plugins + DI + routes
+  graceful-shutdown.ts— SIGTERM/SIGINT handlers
+  plugins/            — Infrastructure plugins (each independently testable)
+    cors.ts           — @fastify/cors configuration
+    rate-limit.ts     — Two-tier rate limiting (10/min auth, 100/min default)
+    swagger.ts        — OpenAPI spec + Scalar UI at /docs
+    error-handler.ts  — Global error response formatter
+    request-id.ts     — Request ID generation + request logging
+  errors/             — Custom error classes (AppError subclasses)
+  common/             — Cross-cutting concerns
+    schemas.ts        — Shared JSON schemas for OpenAPI responses
+    error-handler.ts  — handleError() for route-level error catches
+  auth/               — Authentication feature
+    types.ts          — AuthenticatedUser + FastifyRequest augmentation
+    middleware.ts     — createAuthenticateMiddleware() factory
+    repository.ts     — IAuthRepository + Drizzle impl
+    service.ts        — AuthService (business logic)
+    routes.ts         — /auth/* + /users/* endpoints
+    schema.zod.ts     — Zod validation schemas
+  tasks/              — Tasks feature
+    repository.ts     — ITaskRepository + Drizzle impl
+    service.ts        — TaskService (scoped by owner)
+    routes.ts         — /tasks/* endpoints
+    schema.zod.ts     — Zod validation schemas
+  health/             — Health check routes
+  db/                 — Data layer
+    schema.ts         — Table definitions (users, tasks, refreshTokens)
+    connection.ts     — SQLite + Drizzle instance
+  types/              — TypeScript type augmentations (Fastify modules)
 ```
 
 ## Design Patterns
@@ -285,6 +295,8 @@ src/
 - **Repository Pattern** — Data access abstracted behind interfaces
 - **Service Layer** — Business logic decoupled from routes
 - **Manual Dependency Injection** — Wires repo → service → routes in `createServer()`
+- **Plugin Architecture** — Infrastructure concerns as isolated Fastify plugins (CORS, rate limiting, swagger, error handling, request IDs)
+- **No Cross-Feature Coupling** — Tasks receives authenticate middleware, not AuthService
 - **Zod Validation** — Shared schemas for runtime validation + TypeScript types
 - **Feature Folders** — Each feature contains its own routes, service, repository, and schemas
 - **OpenAPI Generation** — Zod schemas converted to JSON Schema via `toJSONSchema()` in swagger transform hook

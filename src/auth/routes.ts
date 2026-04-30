@@ -3,7 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { ZodTypeProvider } from "@fastify/type-provider-zod";
 import type { AuthService } from "./service";
 import { registerSchema, loginSchema, updateProfileSchema } from "./schema.zod";
-import { handleError, authenticate } from "./utils";
+import { createAuthenticateMiddleware } from "./middleware";
+import { handleError } from "../common/error-handler";
 import { errorSchema, tokensSchema, userSchema } from "../common/schemas";
 import { z } from "zod";
 
@@ -125,6 +126,7 @@ const openApiSchemas = {
 export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
   return async (fastify: FastifyInstance) => {
     const app = fastify.withTypeProvider<ZodTypeProvider>();
+    const authenticate = createAuthenticateMiddleware(authService);
 
     app.post<{ Body: RegisterBody }>(
       "/auth/register",
@@ -181,7 +183,7 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
     // Protected profile routes
     app.addHook("preHandler", async (request, reply) => {
       if (request.url.startsWith("/auth/me")) {
-        await authenticate(request, reply, authService);
+        await authenticate(request, reply);
       }
     });
 
@@ -217,7 +219,7 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
     // Admin-only routes
     app.addHook("preHandler", async (request, reply) => {
       if (request.url.startsWith("/users")) {
-        await authenticate(request, reply, authService);
+        await authenticate(request, reply);
         if (request.user && !["admin"].includes(request.user.role)) {
           return reply.status(403).send({ error: "Insufficient permissions" });
         }

@@ -12,7 +12,26 @@
 
 ## Architecture
 
-Feature-folded layers: `auth/`, `tasks/`, `health/`, `errors/`, `common/`, `types/`, `db/`
+### Plugin-based infrastructure
+
+Infrastructure concerns are extracted as Fastify plugins in `src/plugins/`. Each plugin is independently testable and registers itself on the server via `server.register()`.
+
+**Important:** `setValidatorCompiler` must be called directly on the root server, not inside a plugin. Fastify plugin encapsulation prevents validator compilers set inside plugins from being visible to routes registered outside that plugin's scope.
+
+### Dependency flow
+
+```
+index.ts (composer)
+  → plugins (cors, rate-limit, swagger, error-handler, request-id)
+  → repository → service → authenticate middleware → routes
+```
+
+### Cross-feature boundaries
+
+- `tasks/` receives an `AuthenticateFn` (middleware), not `AuthService` — no cross-feature coupling
+- `auth/` owns authentication types, middleware, and all auth logic
+- `common/` holds truly shared concerns: error handler, OpenAPI schemas
+- `errors/` defines AppError base class and all error subclasses
 
 ## Production Guardrails
 
