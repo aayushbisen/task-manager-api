@@ -267,7 +267,7 @@ src/
     service.ts     # AuthService (business logic)
     routes.ts      # /auth/* + /users/* endpoints
     schema.zod.ts  # Zod validation schemas
-    middleware.ts  # authenticate() + requireRole()
+    utils.ts     # Shared auth utilities (authenticate, handleError, types)
   tasks/           # Tasks feature
     repository.ts  # ITaskRepository + Drizzle impl
     service.ts     # TaskService (scoped by owner)
