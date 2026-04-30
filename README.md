@@ -11,6 +11,7 @@ A full-featured task management REST API built with Fastify, TypeScript, and SQL
 - **Password Security** — argon2id hashing
 - **Input Validation** — Zod schemas shared between runtime and TypeScript types
 - **SQLite Database** — Drizzle ORM with migrations
+- **API Documentation** — Auto-generated OpenAPI 3.0.3 spec with Scalar UI at `/docs`
 
 ## Tech Stack
 
@@ -23,6 +24,7 @@ A full-featured task management REST API built with Fastify, TypeScript, and SQL
 | ORM | Drizzle ORM |
 | Auth | JWT (jsonwebtoken) + argon2 |
 | Testing | Vitest |
+| Docs | `@fastify/swagger` + `@scalar/fastify-api-reference` |
 
 ## Prerequisites
 
@@ -94,6 +96,15 @@ npm run start
 | `GET` | `/health` | Health check |
 | `GET` | `/hello?name=` | Greeting endpoint |
 
+## API Documentation
+
+Interactive API documentation is available when the server is running:
+
+- **Scalar UI** — http://localhost:3000/docs
+- **OpenAPI Spec** — http://localhost:3000/openapi.json
+
+Endpoints are grouped by tag: Auth, Tasks, Admin, Health. Bearer token authentication can be tested directly in the UI.
+
 ## Database
 
 ```bash
@@ -128,6 +139,8 @@ npx tsc --noEmit
 ```
 src/
   errors/          # Custom error classes
+  common/          # Shared JSON schemas for OpenAPI responses
+  types/           # TypeScript type augmentations (Fastify modules)
   auth/            # Authentication feature
     repository.ts  # IAuthRepository + Drizzle impl
     service.ts     # AuthService (business logic)
@@ -153,6 +166,7 @@ src/
 - **Manual Dependency Injection** — Wires repo → service → routes in `createServer()`
 - **Zod Validation** — Shared schemas for runtime validation + TypeScript types
 - **Feature Folders** — Each feature contains its own routes, service, repository, and schemas
+- **OpenAPI Generation** — Zod schemas converted to JSON Schema via `toJSONSchema()` in swagger transform hook
 
 ## License
 
