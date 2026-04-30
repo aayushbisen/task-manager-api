@@ -3,9 +3,9 @@ import type { FastifyInstance } from "fastify";
 import { ZodTypeProvider } from "@fastify/type-provider-zod";
 import type { TaskService } from "./service";
 import type { AuthService } from "../auth/service";
-import { createTaskSchema, updateTaskSchema, taskParamsSchema } from "./schema.zod";
+import { createTaskSchema, updateTaskSchema, taskParamsSchema, listTasksQuerySchema, parseListTasksQuery } from "./schema.zod";
 import { AppError } from "../errors";
-import { errorSchema, taskSchema } from "../common/schemas";
+import { errorSchema, taskSchema, paginationSchema } from "../common/schemas";
 import type { z } from "zod";
 
 type CreateTaskBody = z.infer<typeof createTaskSchema>;
@@ -55,10 +55,11 @@ const openApiSchemas = {
   listTasks: {
     tags: ["Tasks"],
     summary: "List all tasks",
-    description: "Returns tasks owned by the authenticated user. Admins see all tasks.",
+    description: "Returns paginated tasks owned by the authenticated user. Admins see all tasks.",
     security: [{ bearerAuth: [] }],
+    querystring: listTasksQuerySchema,
     response: {
-      200: tasksListSchema,
+      200: paginationSchema,
       401: errorSchema,
     },
   },
@@ -119,10 +120,25 @@ export function createTaskRoutes(taskService: TaskService, authService: AuthServ
       await authenticate(request, reply, authService);
     });
 
-    app.get("/tasks", { schema: openApiSchemas.listTasks }, async (request) => {
-      const { sub: userId, role } = request.user;
-      return taskService.getAllTasks(userId, role === "admin");
-    });
+    app.get<{ Querystring: z.infer<typeof listTasksQuerySchema> }>(
+      "/tasks",
+      { schema: openApiSchemas.listTasks },
+      async (request) => {
+        const { sub: userId, role } = request.user;
+        const q = parseListTasksQuery(request.query);
+        const isAdmin = role === "admin";
+
+        return taskService.getPaginatedTasks(
+          userId,
+          isAdmin,
+          { done: q.done, priority: q.priority, search: q.search },
+          q.orderBy,
+          q.order,
+          q.page,
+          q.limit,
+        );
+      }
+    );
 
     app.post<{ Body: CreateTaskBody }>(
       "/tasks",

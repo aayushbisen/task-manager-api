@@ -43,3 +43,24 @@ export const userSchema = {
   },
   required: ["id", "email", "role", "createdAt", "updatedAt"],
 };
+
+export const paginationSchema = {
+  type: "object" as const,
+  properties: {
+    data: {
+      type: "array" as const,
+      items: taskSchema,
+    },
+    pagination: {
+      type: "object" as const,
+      properties: {
+        page: { type: "number" as const },
+        limit: { type: "number" as const },
+        total: { type: "number" as const },
+        totalPages: { type: "number" as const },
+      },
+      required: ["page", "limit", "total", "totalPages"],
+    },
+  },
+  required: ["data", "pagination"],
+};

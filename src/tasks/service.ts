@@ -1,4 +1,4 @@
-import type { ITaskRepository } from "./repository";
+import type { ITaskRepository, TaskFilters, PaginatedResult } from "./repository";
 import { TaskNotFoundError } from "../errors";
 import type { Task, NewTask } from "../db/schema";
 
@@ -10,6 +10,21 @@ export class TaskService {
       return this.repository.findAll();
     }
     return this.repository.findAllByOwnerId(userId);
+  }
+
+  async getPaginatedTasks(
+    userId: string,
+    isAdmin: boolean,
+    filters: TaskFilters,
+    orderBy: string,
+    orderDir: "asc" | "desc",
+    page: number,
+    limit: number,
+  ): Promise<PaginatedResult<Task>> {
+    if (isAdmin) {
+      return this.repository.findPaginatedAdmin(filters, orderBy, orderDir, page, limit);
+    }
+    return this.repository.findPaginated(userId, filters, orderBy, orderDir, page, limit);
   }
 
   async getTaskById(id: string, userId: string, isAdmin: boolean): Promise<Task> {

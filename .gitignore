@@ -34,3 +34,6 @@ AGENTS.md
 # Logs
 *.log
 npm-debug.log*
+
+.agents/
+skills-lock.json
