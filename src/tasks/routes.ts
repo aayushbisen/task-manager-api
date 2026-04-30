@@ -5,7 +5,7 @@ import type { TaskService } from "./service";
 import type { AuthService } from "../auth/service";
 import { createTaskSchema, updateTaskSchema, taskParamsSchema } from "./schema.zod";
 import { AppError } from "../errors";
-import type { Task } from "../db/schema";
+import { errorSchema, taskSchema } from "../common/schemas";
 import type { z } from "zod";
 
 type CreateTaskBody = z.infer<typeof createTaskSchema>;
@@ -37,6 +37,80 @@ async function authenticate(request: any, reply: FastifyReply, authService: Auth
   }
 }
 
+const tasksListSchema = {
+  type: "array" as const,
+  items: taskSchema,
+};
+
+const taskWithMessageSchema = {
+  type: "object" as const,
+  properties: {
+    message: { type: "string" as const },
+    task: taskSchema,
+  },
+  required: ["message", "task"],
+};
+
+const openApiSchemas = {
+  listTasks: {
+    tags: ["Tasks"],
+    summary: "List all tasks",
+    description: "Returns tasks owned by the authenticated user. Admins see all tasks.",
+    security: [{ bearerAuth: [] }],
+    response: {
+      200: tasksListSchema,
+      401: errorSchema,
+    },
+  },
+  createTask: {
+    tags: ["Tasks"],
+    summary: "Create a task",
+    description: "Creates a new task owned by the authenticated user",
+    security: [{ bearerAuth: [] }],
+    body: createTaskSchema,
+    response: {
+      201: taskSchema,
+      400: errorSchema,
+      401: errorSchema,
+    },
+  },
+  getTask: {
+    tags: ["Tasks"],
+    summary: "Get task by ID",
+    description: "Returns a specific task. Users can only access their own tasks.",
+    security: [{ bearerAuth: [] }],
+    response: {
+      200: taskSchema,
+      401: errorSchema,
+      404: errorSchema,
+    },
+  },
+  updateTask: {
+    tags: ["Tasks"],
+    summary: "Update a task",
+    description: "Updates a task. Users can only update their own tasks.",
+    security: [{ bearerAuth: [] }],
+    body: updateTaskSchema,
+    response: {
+      200: taskSchema,
+      400: errorSchema,
+      401: errorSchema,
+      404: errorSchema,
+    },
+  },
+  deleteTask: {
+    tags: ["Tasks"],
+    summary: "Delete a task",
+    description: "Deletes a task. Users can only delete their own tasks.",
+    security: [{ bearerAuth: [] }],
+    response: {
+      200: taskWithMessageSchema,
+      401: errorSchema,
+      404: errorSchema,
+    },
+  },
+};
+
 export function createTaskRoutes(taskService: TaskService, authService: AuthService): FastifyPluginAsync {
   return async (fastify: FastifyInstance) => {
     const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -45,18 +119,14 @@ export function createTaskRoutes(taskService: TaskService, authService: AuthServ
       await authenticate(request, reply, authService);
     });
 
-    app.get("/tasks", async (request) => {
+    app.get("/tasks", { schema: openApiSchemas.listTasks }, async (request) => {
       const { sub: userId, role } = request.user;
       return taskService.getAllTasks(userId, role === "admin");
     });
 
     app.post<{ Body: CreateTaskBody }>(
       "/tasks",
-      {
-        schema: {
-          body: createTaskSchema,
-        },
-      },
+      { schema: openApiSchemas.createTask },
       async (request, reply) => {
         const { sub: userId } = request.user;
         const task = await taskService.createTask({
@@ -70,11 +140,7 @@ export function createTaskRoutes(taskService: TaskService, authService: AuthServ
 
     app.get<{ Params: z.infer<typeof taskParamsSchema> }>(
       "/tasks/:id",
-      {
-        schema: {
-          params: taskParamsSchema,
-        },
-      },
+      { schema: openApiSchemas.getTask },
       async (request, reply) => {
         try {
           const { sub: userId, role } = request.user;
@@ -87,12 +153,7 @@ export function createTaskRoutes(taskService: TaskService, authService: AuthServ
 
     app.patch<{ Params: z.infer<typeof taskParamsSchema>; Body: UpdateTaskBody }>(
       "/tasks/:id",
-      {
-        schema: {
-          params: taskParamsSchema,
-          body: updateTaskSchema,
-        },
-      },
+      { schema: openApiSchemas.updateTask },
       async (request, reply) => {
         try {
           const { sub: userId, role } = request.user;
@@ -105,11 +166,7 @@ export function createTaskRoutes(taskService: TaskService, authService: AuthServ
 
     app.delete<{ Params: z.infer<typeof taskParamsSchema> }>(
       "/tasks/:id",
-      {
-        schema: {
-          params: taskParamsSchema,
-        },
-      },
+      { schema: openApiSchemas.deleteTask },
       async (request, reply) => {
         try {
           const { sub: userId, role } = request.user;

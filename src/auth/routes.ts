@@ -4,11 +4,16 @@ import { ZodTypeProvider } from "@fastify/type-provider-zod";
 import type { AuthService } from "./service";
 import { registerSchema, loginSchema, updateProfileSchema } from "./schema.zod";
 import { AppError } from "../errors";
+import { errorSchema, tokensSchema, userSchema } from "../common/schemas";
 import { z } from "zod";
 
+type RegisterBody = z.infer<typeof registerSchema>;
+type LoginBody = z.infer<typeof loginSchema>;
 const refreshTokenSchema = z.object({
   refreshToken: z.string(),
 });
+
+type RefreshBody = z.infer<typeof refreshTokenSchema>;
 
 function handleError(error: unknown, reply: FastifyReply) {
   if (error instanceof AppError) {
@@ -36,21 +41,120 @@ async function authenticate(request: any, reply: FastifyReply, authService: Auth
   }
 }
 
-function requireRole(...roles: ("user" | "admin")[]) {
-  return async (request: any, reply: FastifyReply) => {
-    if (!roles.includes(request.user.role)) {
-      return reply.status(403).send({ error: "Insufficient permissions" });
-    }
-  };
-}
+const usersListSchema = {
+  type: "array" as const,
+  items: userSchema,
+};
+
+const openApiSchemas = {
+  register: {
+    tags: ["Auth"],
+    summary: "Register a new user",
+    description: "Creates a new user account and returns access + refresh tokens",
+    body: registerSchema,
+    response: {
+      201: tokensSchema,
+      400: errorSchema,
+      409: errorSchema,
+    },
+  },
+  login: {
+    tags: ["Auth"],
+    summary: "Login",
+    description: "Authenticate with email and password, returns access + refresh tokens",
+    body: loginSchema,
+    response: {
+      200: tokensSchema,
+      400: errorSchema,
+    },
+  },
+  refresh: {
+    tags: ["Auth"],
+    summary: "Refresh tokens",
+    description: "Rotate refresh token to get a new access + refresh token pair",
+    body: refreshTokenSchema,
+    response: {
+      200: tokensSchema,
+      400: errorSchema,
+    },
+  },
+  logout: {
+    tags: ["Auth"],
+    summary: "Logout",
+    description: "Revoke a refresh token, invalidating the session",
+    body: refreshTokenSchema,
+    response: {
+      204: { description: "No content" },
+      400: errorSchema,
+    },
+  },
+  getProfile: {
+    tags: ["Auth"],
+    summary: "Get current user profile",
+    description: "Returns the authenticated user's profile information",
+    security: [{ bearerAuth: [] }],
+    response: {
+      200: userSchema,
+      401: errorSchema,
+      404: errorSchema,
+    },
+  },
+  updateProfile: {
+    tags: ["Auth"],
+    summary: "Update profile",
+    description: "Update name, email, or change password for the authenticated user",
+    security: [{ bearerAuth: [] }],
+    body: updateProfileSchema,
+    response: {
+      200: userSchema,
+      400: errorSchema,
+      401: errorSchema,
+    },
+  },
+  listUsers: {
+    tags: ["Admin"],
+    summary: "List all users",
+    description: "Returns a list of all registered users. Admin only.",
+    security: [{ bearerAuth: [] }],
+    response: {
+      200: usersListSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+  },
+  getUser: {
+    tags: ["Admin"],
+    summary: "Get user by ID",
+    description: "Returns a specific user's profile. Admin only.",
+    security: [{ bearerAuth: [] }],
+    response: {
+      200: userSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+  },
+  deleteUser: {
+    tags: ["Admin"],
+    summary: "Delete a user",
+    description: "Permanently deletes a user account. Admin only.",
+    security: [{ bearerAuth: [] }],
+    response: {
+      204: { description: "No content" },
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+  },
+};
 
 export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
   return async (fastify: FastifyInstance) => {
     const app = fastify.withTypeProvider<ZodTypeProvider>();
 
-    app.post(
+    app.post<{ Body: RegisterBody }>(
       "/auth/register",
-      { schema: { body: registerSchema } },
+      { schema: openApiSchemas.register },
       async (request, reply) => {
         try {
           const tokens = await authService.register(request.body);
@@ -61,9 +165,9 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
       }
     );
 
-    app.post(
+    app.post<{ Body: LoginBody }>(
       "/auth/login",
-      { schema: { body: loginSchema } },
+      { schema: openApiSchemas.login },
       async (request, reply) => {
         try {
           const tokens = await authService.login(request.body);
@@ -74,9 +178,9 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
       }
     );
 
-    app.post(
+    app.post<{ Body: RefreshBody }>(
       "/auth/refresh",
-      { schema: { body: refreshTokenSchema } },
+      { schema: openApiSchemas.refresh },
       async (request, reply) => {
         try {
           const tokens = await authService.refresh(request.body.refreshToken);
@@ -87,9 +191,9 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
       }
     );
 
-    app.post(
+    app.post<{ Body: RefreshBody }>(
       "/auth/logout",
-      { schema: { body: refreshTokenSchema } },
+      { schema: openApiSchemas.logout },
       async (request, reply) => {
         try {
           await authService.logout(request.body.refreshToken);
@@ -109,6 +213,7 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
 
     app.get(
       "/auth/me",
+      { schema: openApiSchemas.getProfile },
       async (request, reply) => {
         try {
           const user = await authService.getUserById(request.user.sub);
@@ -123,7 +228,7 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
 
     app.patch<{ Body: z.infer<typeof updateProfileSchema> }>(
       "/auth/me",
-      { schema: { body: updateProfileSchema } },
+      { schema: openApiSchemas.updateProfile },
       async (request, reply) => {
         try {
           const user = await authService.updateProfile(request.user.sub, request.body);
@@ -145,13 +250,14 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
       }
     });
 
-    app.get("/users", async () => {
+    app.get("/users", { schema: openApiSchemas.listUsers }, async () => {
       const users = await authService.getAllUsers();
       return users.map(({ passwordHash, ...safe }) => safe);
     });
 
     app.get<{ Params: { id: string } }>(
       "/users/:id",
+      { schema: openApiSchemas.getUser },
       async (request, reply) => {
         try {
           const user = await authService.getUserById(request.params.id);
@@ -166,6 +272,7 @@ export function createAuthRoutes(authService: AuthService): FastifyPluginAsync {
 
     app.delete<{ Params: { id: string } }>(
       "/users/:id",
+      { schema: openApiSchemas.deleteUser },
       async (request, reply) => {
         try {
           await authService.deleteUser(request.params.id);
