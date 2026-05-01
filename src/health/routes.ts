@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
+import { sqlite } from "../db/connection";
 
 export const healthRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get(
@@ -7,22 +8,45 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
       schema: {
         tags: ["Health"],
         summary: "Health check",
-        description: "Returns the current status of the API",
+        description: "Returns the current status of the API and database",
         response: {
           200: {
             type: "object",
             properties: {
               status: { type: "string" },
               timestamp: { type: "string" },
+              database: { type: "string" },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              status: { type: "string" },
+              timestamp: { type: "string" },
+              database: { type: "string" },
+              error: { type: "string" },
             },
           },
         },
       },
     },
-    async () => ({
-      status: "ok",
-      timestamp: new Date().toISOString(),
-    })
+    async (_request, reply) => {
+      try {
+        sqlite.prepare("SELECT 1").get();
+        return {
+          status: "ok",
+          timestamp: new Date().toISOString(),
+          database: "connected",
+        };
+      } catch (error) {
+        return reply.status(503).send({
+          status: "degraded",
+          timestamp: new Date().toISOString(),
+          database: "disconnected",
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
   );
 
   fastify.get<{
